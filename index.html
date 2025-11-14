@@ -84,6 +84,61 @@
       color: #fff;
     }
 
+    .search-container {
+      padding: 16px;
+      max-width: 100vw;
+    }
+
+    .search-form {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .search-input {
+      flex: 1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 14px;
+      padding: 10px 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: #58a6ff;
+    }
+
+    .search-engine-toggle {
+      display: flex;
+      gap: 4px;
+    }
+
+    .search-engine-toggle button {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #8b949e;
+      padding: 10px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.1s;
+      white-space: nowrap;
+    }
+
+    .search-engine-toggle button:hover {
+      background: #30363d;
+      color: #e6edf3;
+    }
+
+    .search-engine-toggle button.active {
+      background: #1f6feb;
+      border-color: #1f6feb;
+      color: #fff;
+    }
+
     .items {
       flex: 1;
       overflow-y: auto;
@@ -218,6 +273,23 @@
   </style>
 </head>
 <body>
+  <div class="search-container">
+    <form class="search-form" onsubmit="handleSearch(event)">
+      <input
+        type="text"
+        class="search-input"
+        id="searchInput"
+        placeholder="Search..."
+        autocomplete="off"
+        autofocus
+      />
+      <div class="search-engine-toggle">
+        <button type="button" id="ddg-btn" onclick="setSearchEngine('ddg')" class="active">DuckDuckGo</button>
+        <button type="button" id="google-btn" onclick="setSearchEngine('google')">Google</button>
+      </div>
+    </form>
+  </div>
+
   <div class="container">
     <div class="column">
       <div class="column-header">
@@ -256,6 +328,7 @@
   <script>
     let lastUpdate = null;
     let githubTimeRange = localStorage.getItem('github_range') || 'week';
+    let searchEngine = localStorage.getItem('search_engine') || 'ddg';
     const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
     function formatTime(date) {
@@ -265,6 +338,29 @@
     function updateStatus(message) {
       const status = document.getElementById('status');
       status.textContent = message;
+    }
+
+    function setSearchEngine(engine) {
+      searchEngine = engine;
+      localStorage.setItem('search_engine', engine);
+
+      // Update button states
+      document.getElementById('ddg-btn').classList.toggle('active', engine === 'ddg');
+      document.getElementById('google-btn').classList.toggle('active', engine === 'google');
+    }
+
+    function handleSearch(event) {
+      event.preventDefault();
+      const query = document.getElementById('searchInput').value.trim();
+
+      if (!query) return;
+
+      const searchUrls = {
+        ddg: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
+        google: `https://www.google.com/search?q=${encodeURIComponent(query)}`
+      };
+
+      window.location.href = searchUrls[searchEngine];
     }
 
     async function loadGitHubOnly() {
@@ -411,9 +507,11 @@
       }
     }
 
-    // Restore saved GitHub time range preference
+    // Restore saved preferences
     document.getElementById('github-day').classList.toggle('active', githubTimeRange === 'day');
     document.getElementById('github-week').classList.toggle('active', githubTimeRange === 'week');
+    document.getElementById('ddg-btn').classList.toggle('active', searchEngine === 'ddg');
+    document.getElementById('google-btn').classList.toggle('active', searchEngine === 'google');
 
     // Initial load
     loadFeeds();
