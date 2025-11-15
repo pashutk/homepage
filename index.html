@@ -87,6 +87,7 @@
     .search-container {
       padding: 16px;
       max-width: 100vw;
+      position: relative;
     }
 
     .search-form {
@@ -95,8 +96,67 @@
       align-items: center;
     }
 
-    .search-input {
+    .search-input-wrapper {
       flex: 1;
+      position: relative;
+    }
+
+    .suggestions-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      margin-top: -1px;
+      max-height: 320px;
+      overflow-y: auto;
+      z-index: 1000;
+      display: none;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    }
+
+    .suggestions-dropdown.show {
+      display: block;
+    }
+
+    .suggestions-dropdown::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .suggestions-dropdown::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .suggestions-dropdown::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 3px;
+    }
+
+    .suggestions-dropdown::-webkit-scrollbar-thumb:hover {
+      background: #484f58;
+    }
+
+    .suggestion-item {
+      padding: 12px 16px;
+      cursor: pointer;
+      color: #8b949e;
+      font-size: 13px;
+      transition: all 0.1s;
+      border-left: 2px solid transparent;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item.selected {
+      background: #0d1117;
+      color: #e6edf3;
+      border-left-color: #1f6feb;
+    }
+
+    .search-input {
+      width: 100%;
       background: #161b22;
       border: 1px solid #30363d;
       border-radius: 6px;
@@ -109,6 +169,14 @@
 
     .search-input:focus {
       border-color: #58a6ff;
+    }
+
+    .search-input-wrapper .search-input:focus {
+      border-radius: 6px 6px 0 0;
+    }
+
+    .search-input-wrapper .search-input:focus + .suggestions-dropdown.show {
+      border-top: 1px solid #30363d;
     }
 
     .search-engine-toggle {
@@ -275,14 +343,20 @@
 <body>
   <div class="search-container">
     <form class="search-form" onsubmit="handleSearch(event)">
-      <input
-        type="text"
-        class="search-input"
-        id="searchInput"
-        placeholder="Search..."
-        autocomplete="off"
-        autofocus
-      />
+      <div class="search-input-wrapper">
+        <input
+          type="text"
+          class="search-input"
+          id="searchInput"
+          placeholder="Search..."
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          autofocus
+        />
+        <div class="suggestions-dropdown" id="suggestionsDropdown"></div>
+      </div>
       <div class="search-engine-toggle">
         <button type="button" id="ddg-btn" onclick="setSearchEngine('ddg')" class="active">DuckDuckGo</button>
         <button type="button" id="google-btn" onclick="setSearchEngine('google')">Google</button>
@@ -331,9 +405,160 @@
     let searchEngine = localStorage.getItem('search_engine') || 'ddg';
     const AUTO_REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
+    // Suggestions state
+    let suggestions = [];
+    let selectedIndex = -1;
+    let debounceTimer = null;
+
     function formatTime(date) {
       return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
+
+    // Fetch suggestions from backend
+    async function fetchSuggestions(query) {
+      if (!query || query.trim().length < 2) {
+        hideSuggestions();
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/suggestions?q=${encodeURIComponent(query)}&engine=${searchEngine}`);
+        if (!response.ok) throw new Error('Suggestions request failed');
+
+        const data = await response.json();
+        suggestions = data.suggestions || [];
+
+        if (suggestions.length > 0) {
+          showSuggestions();
+        } else {
+          hideSuggestions();
+        }
+      } catch (error) {
+        console.error('Failed to fetch suggestions:', error);
+        hideSuggestions();
+      }
+    }
+
+    // Debounced search suggestions
+    function handleInputChange(event) {
+      const query = event.target.value;
+
+      clearTimeout(debounceTimer);
+
+      if (!query || query.trim().length < 2) {
+        hideSuggestions();
+        return;
+      }
+
+      debounceTimer = setTimeout(() => {
+        fetchSuggestions(query);
+      }, 200); // 200ms debounce
+    }
+
+    // Render suggestions dropdown
+    function showSuggestions() {
+      const dropdown = document.getElementById('suggestionsDropdown');
+      selectedIndex = -1;
+
+      dropdown.innerHTML = suggestions.map((suggestion, index) => `
+        <div class="suggestion-item" data-index="${index}">
+          ${escapeHtml(suggestion)}
+        </div>
+      `).join('');
+
+      dropdown.classList.add('show');
+
+      // Add click handlers
+      dropdown.querySelectorAll('.suggestion-item').forEach(item => {
+        item.addEventListener('click', () => {
+          selectSuggestion(parseInt(item.dataset.index));
+        });
+      });
+    }
+
+    // Hide suggestions dropdown
+    function hideSuggestions() {
+      const dropdown = document.getElementById('suggestionsDropdown');
+      dropdown.classList.remove('show');
+      suggestions = [];
+      selectedIndex = -1;
+    }
+
+    // Select a suggestion
+    function selectSuggestion(index) {
+      if (index >= 0 && index < suggestions.length) {
+        const input = document.getElementById('searchInput');
+        input.value = suggestions[index];
+        hideSuggestions();
+
+        // Trigger the search
+        const searchUrls = {
+          ddg: `https://duckduckgo.com/?q=${encodeURIComponent(input.value)}`,
+          google: `https://www.google.com/search?q=${encodeURIComponent(input.value)}`
+        };
+
+        window.location.href = searchUrls[searchEngine];
+      }
+    }
+
+    // Handle keyboard navigation
+    function handleKeyDown(event) {
+      const dropdown = document.getElementById('suggestionsDropdown');
+
+      if (!dropdown.classList.contains('show')) return;
+
+      const items = dropdown.querySelectorAll('.suggestion-item');
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        selectedIndex = Math.min(selectedIndex + 1, suggestions.length - 1);
+        updateSelectedItem(items);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        selectedIndex = Math.max(selectedIndex - 1, -1);
+        updateSelectedItem(items);
+      } else if (event.key === 'Enter') {
+        if (selectedIndex >= 0) {
+          event.preventDefault();
+          selectSuggestion(selectedIndex);
+        }
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        hideSuggestions();
+      }
+    }
+
+    // Update selected item visual state
+    function updateSelectedItem(items) {
+      items.forEach((item, index) => {
+        if (index === selectedIndex) {
+          item.classList.add('selected');
+          item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        } else {
+          item.classList.remove('selected');
+        }
+      });
+
+      // Update input with selected suggestion
+      if (selectedIndex >= 0) {
+        document.getElementById('searchInput').value = suggestions[selectedIndex];
+      }
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Close suggestions when clicking outside
+    document.addEventListener('click', (event) => {
+      const searchContainer = document.querySelector('.search-container');
+      if (!searchContainer.contains(event.target)) {
+        hideSuggestions();
+      }
+    });
 
     function updateStatus(message) {
       const status = document.getElementById('status');
@@ -347,6 +572,17 @@
       // Update button states
       document.getElementById('ddg-btn').classList.toggle('active', engine === 'ddg');
       document.getElementById('google-btn').classList.toggle('active', engine === 'google');
+
+      // Clear current suggestions
+      hideSuggestions();
+
+      // Refetch suggestions if there's text in the input
+      const input = document.getElementById('searchInput');
+      const query = input.value.trim();
+      if (query.length >= 2) {
+        clearTimeout(debounceTimer);
+        fetchSuggestions(query);
+      }
     }
 
     function handleSearch(event) {
@@ -512,6 +748,11 @@
     document.getElementById('github-week').classList.toggle('active', githubTimeRange === 'week');
     document.getElementById('ddg-btn').classList.toggle('active', searchEngine === 'ddg');
     document.getElementById('google-btn').classList.toggle('active', searchEngine === 'google');
+
+    // Attach search input event listeners
+    const searchInput = document.getElementById('searchInput');
+    searchInput.addEventListener('input', handleInputChange);
+    searchInput.addEventListener('keydown', handleKeyDown);
 
     // Initial load
     loadFeeds();

@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const feedHandler = require('./api/feed');
 const descriptionsHandler = require('./api/descriptions');
+const suggestionsHandler = require('./api/suggestions');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,7 @@ app.use(express.static('.'));
 // API endpoints
 app.get('/api/feed', feedHandler);
 app.get('/api/descriptions', descriptionsHandler);
+app.get('/api/suggestions', suggestionsHandler);
 
 // Serve index.html for root
 app.get('/', (req, res) => {

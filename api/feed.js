@@ -61,8 +61,8 @@ async function fetchGitHubTrending(timeRange = 'week') {
         ? descMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
         : '';
 
-      // Extract total stars
-      const starsMatch = article.match(/octicon-star[\s\S]*?([\d,]+)\s*$/m);
+      // Extract total stars (appears after octicon-star svg)
+      const starsMatch = article.match(/octicon octicon-star[\s\S]*?<\/svg>\s*([\d,]+)/);
       const stars = starsMatch ? parseInt(starsMatch[1].replace(/,/g, '')) : 0;
 
       // Extract language
