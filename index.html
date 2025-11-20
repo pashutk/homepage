@@ -149,6 +149,9 @@
       transition: all 0.1s;
       border-left: 2px solid transparent;
       line-height: 1.5;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
     .suggestion-item:hover,
@@ -167,6 +170,20 @@
     .suggestion-item.suggestion-url.selected {
       border-left-color: #1f6feb;
       background: #0d1117;
+    }
+
+    .suggestion-favicon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      border-radius: 2px;
+    }
+
+    .suggestion-text {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .search-input {
@@ -548,11 +565,24 @@
         const isUrl = suggestion.type === 'url';
         const displayText = escapeHtml(suggestion.text);
 
-        return `
-          <div class="suggestion-item ${isUrl ? 'suggestion-url' : ''}" data-index="${index}">
-            ${displayText}
-          </div>
-        `;
+        if (isUrl) {
+          // Extract domain for favicon
+          const domain = suggestion.domain || suggestion.text;
+          const faviconUrl = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
+
+          return `
+            <div class="suggestion-item suggestion-url" data-index="${index}">
+              <img src="${faviconUrl}" class="suggestion-favicon" alt="" onerror="this.style.display='none'">
+              <span class="suggestion-text">${displayText}</span>
+            </div>
+          `;
+        } else {
+          return `
+            <div class="suggestion-item" data-index="${index}">
+              <span class="suggestion-text">${displayText}</span>
+            </div>
+          `;
+        }
       }).join('');
 
       dropdown.classList.add('show');
