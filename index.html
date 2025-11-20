@@ -158,6 +158,17 @@
       border-left-color: #1f6feb;
     }
 
+    .suggestion-item.suggestion-url {
+      border-left-color: #58a6ff;
+      font-weight: 500;
+    }
+
+    .suggestion-item.suggestion-url:hover,
+    .suggestion-item.suggestion-url.selected {
+      border-left-color: #1f6feb;
+      background: #0d1117;
+    }
+
     .search-input {
       width: 100%;
       background: #161b22;
@@ -419,6 +430,60 @@
     let selectedIndex = -1;
     let debounceTimer = null;
 
+    // URL quick access storage
+    function getVisitedUrls() {
+      const stored = localStorage.getItem('visited_urls');
+      return stored ? JSON.parse(stored) : {};
+    }
+
+    function saveVisitedUrl(url) {
+      const visitedUrls = getVisitedUrls();
+      visitedUrls[url] = (visitedUrls[url] || 0) + 1;
+      localStorage.setItem('visited_urls', JSON.stringify(visitedUrls));
+    }
+
+    function isFullUrl(text) {
+      try {
+        const url = new URL(text.startsWith('http') ? text : `https://${text}`);
+        return url.hostname.includes('.');
+      } catch {
+        return false;
+      }
+    }
+
+    function matchVisitedUrls(query) {
+      if (!query || query.trim().length < 2) return [];
+
+      const visitedUrls = getVisitedUrls();
+      const matches = [];
+      const lowerQuery = query.toLowerCase();
+      const MAX_MATCHES = 3; // Limit to top 3 URL matches
+
+      for (const [url, count] of Object.entries(visitedUrls)) {
+        // Only consider URLs that have been visited 2+ times
+        if (count < 2) continue;
+
+        const urlLower = url.toLowerCase();
+
+        // Extract domain parts for matching
+        let domain = url;
+        try {
+          const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+          domain = urlObj.hostname;
+        } catch {}
+
+        // Match full URL, domain, or partial domain
+        if (urlLower.includes(lowerQuery) ||
+            domain.includes(lowerQuery) ||
+            domain.replace('www.', '').startsWith(lowerQuery)) {
+          matches.push({ url, count, domain });
+        }
+      }
+
+      // Sort by visit count (most visited first) and limit results
+      return matches.sort((a, b) => b.count - a.count).slice(0, MAX_MATCHES);
+    }
+
     function formatTime(date) {
       return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
@@ -431,11 +496,21 @@
       }
 
       try {
+        // Get visited URLs that match the query
+        const visitedUrls = matchVisitedUrls(query);
+
+        // Fetch regular search suggestions
         const response = await fetch(`/api/suggestions?q=${encodeURIComponent(query)}&engine=${searchEngine}`);
         if (!response.ok) throw new Error('Suggestions request failed');
 
         const data = await response.json();
-        suggestions = data.suggestions || [];
+        const searchSuggestions = data.suggestions || [];
+
+        // Combine: visited URLs first, then search suggestions
+        suggestions = [
+          ...visitedUrls.map(match => ({ type: 'url', text: match.url, domain: match.domain })),
+          ...searchSuggestions.map(text => ({ type: 'search', text }))
+        ];
 
         if (suggestions.length > 0) {
           showSuggestions();
@@ -469,11 +544,16 @@
       const dropdown = document.getElementById('suggestionsDropdown');
       selectedIndex = -1;
 
-      dropdown.innerHTML = suggestions.map((suggestion, index) => `
-        <div class="suggestion-item" data-index="${index}">
-          ${escapeHtml(suggestion)}
-        </div>
-      `).join('');
+      dropdown.innerHTML = suggestions.map((suggestion, index) => {
+        const isUrl = suggestion.type === 'url';
+        const displayText = escapeHtml(suggestion.text);
+
+        return `
+          <div class="suggestion-item ${isUrl ? 'suggestion-url' : ''}" data-index="${index}">
+            ${displayText}
+          </div>
+        `;
+      }).join('');
 
       dropdown.classList.add('show');
 
@@ -496,14 +576,22 @@
     // Select a suggestion
     function selectSuggestion(index) {
       if (index >= 0 && index < suggestions.length) {
+        const suggestion = suggestions[index];
         const input = document.getElementById('searchInput');
-        input.value = suggestions[index];
+        input.value = suggestion.text;
         hideSuggestions();
 
-        // Trigger the search
+        // If it's a URL, navigate directly to it
+        if (suggestion.type === 'url') {
+          const url = suggestion.text.startsWith('http') ? suggestion.text : `https://${suggestion.text}`;
+          window.location.href = url;
+          return;
+        }
+
+        // Otherwise, perform a search
         const searchUrls = {
-          ddg: `https://duckduckgo.com/?q=${encodeURIComponent(input.value)}`,
-          google: `https://www.google.com/search?q=${encodeURIComponent(input.value)}`
+          ddg: `https://duckduckgo.com/?q=${encodeURIComponent(suggestion.text)}`,
+          google: `https://www.google.com/search?q=${encodeURIComponent(suggestion.text)}`
         };
 
         window.location.href = searchUrls[searchEngine];
@@ -550,7 +638,7 @@
 
       // Update input with selected suggestion
       if (selectedIndex >= 0) {
-        document.getElementById('searchInput').value = suggestions[selectedIndex];
+        document.getElementById('searchInput').value = suggestions[selectedIndex].text;
       }
     }
 
@@ -600,6 +688,27 @@
 
       if (!query) return;
 
+      // Check if query matches a saved URL
+      const matchedUrls = matchVisitedUrls(query);
+      if (matchedUrls.length > 0) {
+        // Navigate to the top matched URL
+        const url = matchedUrls[0].url.startsWith('http') ? matchedUrls[0].url : `https://${matchedUrls[0].url}`;
+        window.location.href = url;
+        return;
+      }
+
+      // Check if the query is a full URL
+      if (isFullUrl(query)) {
+        // Track the URL visit
+        saveVisitedUrl(query);
+
+        // Navigate directly to the URL
+        const url = query.startsWith('http') ? query : `https://${query}`;
+        window.location.href = url;
+        return;
+      }
+
+      // Otherwise, perform a search
       const searchUrls = {
         ddg: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
         google: `https://www.google.com/search?q=${encodeURIComponent(query)}`
